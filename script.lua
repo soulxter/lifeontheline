@@ -1176,10 +1176,15 @@ icon:GetPropertyChangedSignal("AbsolutePosition"):Connect(positionCubes)
 
 local steal_anims = {
     "rbxassetid://109744655458082",
-    "rbxassetid://113088324958896",
-    "rbxassetid://96801747244950",
-    "rbxassetid://130345228612384",
-    "rbxassetid://82417661349987"
+	"rbxassetid://113088324958896",
+	"rbxassetid://130345228612384",
+	"rbxassetid://111439544531399",
+	"rbxassetid://80730958176662",
+	"rbxassetid://89782964116671",
+}
+
+local steal_anims_that_bypass_dribbles = {
+    "rbxassetid://107502555664359",
 }
 
 local function notify2(title, text, duration)
@@ -1247,6 +1252,14 @@ function montackleanim(animator, targetPlayer)
         end
         if not isTackle then return end
 
+        local bypassDribble = false
+        for _, id in ipairs(steal_anims_that_bypass_dribbles) do
+            if animTrack.Animation.AnimationId == id then
+                bypassDribble = true
+                break
+            end
+        end
+
         if targetPlayer.Team == localplayer.Team then return end
 
         local lastFire = 0
@@ -1283,7 +1296,7 @@ function montackleanim(animator, targetPlayer)
             if autoSkillState.toggleTSpecial then
                 fireSkill(autoSkillState.autoSkills["toggleTSpecial"], closestTeammate)
             end
-            if autoSkillState.toggleDribble then
+            if autoSkillState.toggleDribble and not bypassDribble then
                 fireSkill(autoSkillState.autoSkills["toggleDribble"], closestTeammate)
             end
 
@@ -1297,7 +1310,7 @@ function montackleanim(animator, targetPlayer)
     connections[targetPlayer] = connections[targetPlayer] or {}
     connections[targetPlayer].animatorConn = animConnection
 end
-
+	
 function setupPlayer(plr)
     if plr == localplayer then return end
 
