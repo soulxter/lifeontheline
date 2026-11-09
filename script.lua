@@ -3229,6 +3229,52 @@ local isMobile = UserInputService.TouchEnabled and not UserInputService.Keyboard
 
 local currentLineupMode = "Freeze"
 
+local lineupClearedMovers = {}
+
+local LINEUP_LEGACY_MOVERS = {
+    BodyVelocity = true,
+    BodyPosition = true,
+    BodyGyro = true,
+    BodyAngularVelocity = true,
+    BodyForce = true,
+}
+
+local LINEUP_MODERN_MOVERS = {
+    LinearVelocity = true,
+    AlignPosition = true,
+    AlignOrientation = true,
+    VectorForce = true,
+    Torque = true,
+}
+
+local function suppressMovers()
+    if not hrp or not hrp.Parent then return end
+    for _, child in ipairs(hrp:GetChildren()) do
+        local cn = child.ClassName
+        if LINEUP_LEGACY_MOVERS[cn] then
+            pcall(function() child:Destroy() end)
+        elseif LINEUP_MODERN_MOVERS[cn] then
+            if child.Enabled ~= false then
+                table.insert(lineupClearedMovers, child)
+            end
+            pcall(function() child.Enabled = false end)
+        end
+    end
+    pcall(function()
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+    end)
+end
+
+local function restoreMovers()
+    for _, mover in ipairs(lineupClearedMovers) do
+        if mover and mover.Parent then
+            pcall(function() mover.Enabled = true end)
+        end
+    end
+    table.clear(lineupClearedMovers)
+end
+
 local function updateCharacterRefs(char)
     character = char
     hrp = character:WaitForChild("HumanoidRootPart")
@@ -3297,6 +3343,7 @@ UserInputService.InputEnded:Connect(function(input)
         
         if humanoid then humanoid.WalkSpeed = 30 end
         if hrp then hrp.Anchored = false end
+	restoreMovers()
     end
 end)
 
@@ -3338,23 +3385,30 @@ end
 local function resetLineupPhysics()
     if lineupLockActive then
         lineupLockActive = false
-        if currentLineupMode == "Freeze" then
-            if hrp then humanoid.WalkSpeed = 0 end
-        elseif currentLineupMode == "Slowness" then
-            if humanoid then humanoid.WalkSpeed = 30 end
-        end
+        if humanoid then humanoid.WalkSpeed = 0 end
     end
+    restoreMovers()
 end
 
-local function applyLineupMode()
+local function applyLineupMode(padPart, dt)
     lineupLockActive = true
     if currentLineupMode == "Freeze" then
-        if hrp then humanoid.WalkSpeed = 0 end
+        if hrp then
+            humanoid.WalkSpeed = 0
+            suppressMovers()
+            if padPart then
+                local targetPos = padPart.Position + Vector3.new(0, 3, 0)
+                local currentRot = hrp.CFrame - hrp.CFrame.Position
+                local targetCF = CFrame.new(targetPos) * currentRot
+                local alpha = 1 - math.exp(-15 * (dt or 1/60))
+                hrp.CFrame = hrp.CFrame:Lerp(targetCF, alpha)
+            end
+        end
     elseif currentLineupMode == "Slowness" then
         if humanoid then humanoid.WalkSpeed = 5 end
     end
 end
-
+	
 if isMobile then
     RunService.RenderStepped:Connect(function()
         if not hrp or not character then return end
@@ -3383,7 +3437,7 @@ if isMobile then
         end
     end)
 else
-    RunService.RenderStepped:Connect(function()
+    RunService.RenderStepped:Connect(function(dt)
         if not holdingRMB or not hrp or not humanoid then
             resetLineupPhysics()
             return
@@ -3406,7 +3460,8 @@ else
             startCamLock(targetPart)
         end
         
-        applyLineupMode()
+        local padPart = Workspace:FindFirstChild("pad" .. padIndex)
+        applyLineupMode(padPart, dt)
     end)
 end
 
