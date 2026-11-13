@@ -4755,7 +4755,8 @@ local instantKickState = {
     enabled = false,
     bindKey = Enum.KeyCode.Y,
     lastKick = 0,
-    cooldown = 0.2
+    cooldown = 0.2,
+    height = 0.35
 }
 
 instantKick:Toggle("Kick Upon Use", "Fires A Kick In The Direction You're Looking When The Keybind Is Pressed.", function()
@@ -4765,6 +4766,10 @@ instantKick:Toggle("Kick Upon Use", "Fires A Kick In The Direction You're Lookin
         Text = instantKickState.enabled and "Enabled." or "Disabled.",
         Duration = 1
     })
+end)
+
+instantKick:Slider("Kick Height", 0.54, 0, 1.5, 0.01, function(v)
+    instantKickState.height = v
 end)
 
 instantKick:Textbox("Kick Keybind", "Enter Key (Example: Y, G, Q.)", function(text)
@@ -4812,11 +4817,36 @@ UserInputService.InputBegan:Connect(function(input, gp)
     hum:LoadAnimation(anim):Play()
 
     local cam = workspace.CurrentCamera
-    local lookDir = cam and cam.CFrame.LookVector or root.CFrame.LookVector
+    local camLook = cam and cam.CFrame.LookVector or root.CFrame.LookVector
+    
+    local flatLook = Vector3.new(camLook.X, 0, camLook.Z).Unit
+    local finalDir = Vector3.new(flatLook.X, instantKickState.height, flatLook.Z).Unit
 
-    NET:FireServer(
-        buffer.fromstring(buffers["base"]),
-        { { "kick", 95, false, lookDir } }
+    local kickSide = true
+    if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+        kickSide = "left"
+    elseif UserInputService:IsKeyDown(Enum.KeyCode.D) then
+        kickSide = true
+    end
+
+    local Event = game:GetService("ReplicatedStorage").Network.NetworkSystem.Reliable
+    
+    local b = buffer.create(3)
+    buffer.writeu8(b, 0, 82)
+    buffer.writeu8(b, 1, 1)
+    buffer.writeu8(b, 2, 0)
+
+    Event:FireServer(
+        b,
+        {
+            {
+                "kick",
+                100,
+                kickSide,
+                finalDir,
+                "basicShot"
+            }
+        }
     )
 end)
 
