@@ -4751,23 +4751,42 @@ local function performAirDribble()
     })
 end
 
-local function fireChangeMode()
+local function tapZ()
+    local vim = game:GetService("VirtualInputManager")
     pcall(function()
-        local Event = game:GetService("ReplicatedStorage").Network.NetworkSystem.Reliable
-        Event:FireServer(
-            (function(bytes)
-                local b = buffer.create(#bytes)
-                for i = 1, #bytes do
-                    buffer.writeu8(b, i - 1, bytes[i])
-                end
-                return b
-            end)({ 90, 1, 0 }),
-            {
-                {
-                    "changeMode"
-                }
-            }
-        )
+        vim:SendKeyEvent(true, Enum.KeyCode.Z, false, game)
+    end)
+    task.delay(0.05, function()
+        pcall(function()
+            vim:SendKeyEvent(false, Enum.KeyCode.Z, false, game)
+        end)
+    end)
+end
+
+local function getModeValue()
+    local cF = workspace:FindFirstChild("characters")
+    if not cF then return nil end
+    local pF = cF:FindFirstChild(player.Name)
+    if not pF then return nil end
+    local s = pF:FindFirstChild("state")
+    if not s then return nil end
+    local m = s:FindFirstChild("mode")
+    if not m or not m:IsA("StringValue") then return nil end
+    return m.Value
+end
+
+local function spamZUntilNormal()
+    task.spawn(function()
+        local startTime = tick()
+        local maxDuration = 5
+        local interval = 0.1
+        while tick() - startTime < maxDuration do
+            local val = getModeValue()
+            if val == nil then return end
+            if val == "Normal" then return end
+            task.wait(interval)
+            tapZ()
+        end
     end)
 end
 
@@ -4794,8 +4813,13 @@ UserInputService.InputBegan:Connect(function(input, gp)
     airDribbleState.isHolding = true
 
     if input.KeyCode == Enum.KeyCode.C then
-        fireChangeMode()
-        task.delay(1, fireChangeMode)
+        tapZ()
+        task.spawn(function()
+            task.wait(1)
+            tapZ()
+            task.wait(0.15)
+            spamZUntilNormal()
+        end)
     end
 
     performAirDribble()
