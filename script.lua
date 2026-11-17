@@ -4646,7 +4646,7 @@ end)
 local airdr = maintab2:Folder("Air Dribble Features.", Color3.fromRGB(169, 5, 255), true)
 airdr:Label("Air Dribble: Dribbles The Ball Through The Air.")
 
-local bindKey = Enum.KeyCode.LeftAlt
+local bindKeys = { Enum.KeyCode.C }
 
 local airDribbleState = {
     enabled = false,
@@ -4669,31 +4669,63 @@ airdr:Toggle("Air Dribble", "Kicks The Ball Forward Infront Of You And Up.", fun
     notiy(airDribbleState.enabled and "Enabled." or "Disabled.")
 end)
 
-airdr:Textbox("Air Dribble Bind", "Enter Key (Example: E, Q, LeftAlt.)", function(text)
-    if typeof(text) ~= "string" then
-        bindKey = Enum.KeyCode.LeftAlt
-        notiy("Invalid Key. Bind Is Now LeftAlt.")
+airdr:Textbox("Air Dribble Binds", "Enter Keys Separated By Commas (Example: E, Q, C.)", function(text)
+    if typeof(text) ~= "string" or text:gsub("%s+", "") == "" then
+        bindKeys = { Enum.KeyCode.C }
+        notiy("No Keys Provided. Binds Reset To C.")
         return
     end
 
-    local formatted = text:gsub("%s+", "")
-    local success, key = pcall(function()
-        return Enum.KeyCode[formatted]
-    end)
+    local parsed = {}
+    local invalid = {}
+    for raw in string.gmatch(text, "[^,]+") do
+        local formatted = raw:gsub("%s+", "")
+        if formatted ~= "" then
+            local success, key = pcall(function()
+                return Enum.KeyCode[formatted]
+            end)
+            if success and key then
+                table.insert(parsed, key)
+            else
+                table.insert(invalid, formatted)
+            end
+        end
+    end
 
-    if success and key then
-        bindKey = key
-        notiy("Bind Set To: " .. key.Name)
+    if #parsed > 0 then
+        bindKeys = parsed
+        local names = {}
+        for _, k in ipairs(parsed) do table.insert(names, k.Name) end
+        local msg = "Binds Set To: " .. table.concat(names, ", ")
+        if #invalid > 0 then
+            msg = msg .. " (Skipped Invalid: " .. table.concat(invalid, ", ") .. ")"
+        end
+        notiy(msg)
     else
-        bindKey = Enum.KeyCode.LeftAlt
-        notiy("Invalid Key. Bind Is Now LeftAlt.")
+        bindKeys = { Enum.KeyCode.C }
+        notiy("No Valid Keys. Binds Reset To C.")
     end
 end)
 
 local player = Players.LocalPlayer
 local holdingConnection = nil
 
+local function playerHasBall()
+    if not player.Character then return false end
+    if player.Character:FindFirstChild("Ball", true) then return true end
+    local charFolder = workspace:FindFirstChild("characters")
+    if charFolder then
+        local pFolder = charFolder:FindFirstChild(player.Name)
+        if pFolder and pFolder:FindFirstChild("Ball", true) then
+            return true
+        end
+    end
+    return false
+end
+
 local function performAirDribble()
+    if not playerHasBall() then return end
+
     local now = tick()
     if now - airDribbleState.lastKick < cooldown then
         return
@@ -4719,31 +4751,79 @@ local function performAirDribble()
     })
 end
 
-UserInputService.InputBegan:Connect(function(input, gp)
-    if gp or input.KeyCode ~= bindKey then return end
-    if not airDribbleState.enabled then return end
+local function fireChangeMode()
+    pcall(function()
+        local Event = game:GetService("ReplicatedStorage").Network.NetworkSystem.Reliable
+        Event:FireServer(
+            (function(bytes)
+                local b = buffer.create(#bytes)
+                for i = 1, #bytes do
+                    buffer.writeu8(b, i - 1, bytes[i])
+                end
+                return b
+            end)({ 90, 1, 0 }),
+            {
+                {
+                    "changeMode"
+                }
+            }
+        )
+    end)
+end
 
+local heldBinds = {}
+
+local function isBindKey(code)
+    for _, k in ipairs(bindKeys) do
+        if k == code then return true end
+    end
+    return false
+end
+
+local function anyBindHeld()
+    for _ in pairs(heldBinds) do return true end
+    return false
+end
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if not airDribbleState.enabled then return end
+    if not isBindKey(input.KeyCode) then return end
+
+    heldBinds[input.KeyCode] = true
     airDribbleState.isHolding = true
+
+    if input.KeyCode == Enum.KeyCode.C then
+        fireChangeMode()
+        task.delay(1, fireChangeMode)
+    end
 
     performAirDribble()
 
-    if holdingConnection then holdingConnection:Disconnect() end
-    holdingConnection = RunService.Heartbeat:Connect(function()
-        if airDribbleState.isHolding and airDribbleState.enabled then
-            performAirDribble()
-        else
-            holdingConnection:Disconnect()
-            holdingConnection = nil
-        end
-    end)
+    if not holdingConnection then
+        holdingConnection = RunService.Heartbeat:Connect(function()
+            if airDribbleState.isHolding and airDribbleState.enabled and anyBindHeld() then
+                performAirDribble()
+            else
+                if holdingConnection then
+                    holdingConnection:Disconnect()
+                    holdingConnection = nil
+                end
+                airDribbleState.isHolding = false
+            end
+        end)
+    end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-    if input.KeyCode == bindKey then
-        airDribbleState.isHolding = false
-        if holdingConnection then
-            holdingConnection:Disconnect()
-            holdingConnection = nil
+    if heldBinds[input.KeyCode] then
+        heldBinds[input.KeyCode] = nil
+        if not anyBindHeld() then
+            airDribbleState.isHolding = false
+            if holdingConnection then
+                holdingConnection:Disconnect()
+                holdingConnection = nil
+            end
         end
     end
 end)
