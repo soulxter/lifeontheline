@@ -4775,17 +4775,28 @@ local function getModeValue()
     return m.Value
 end
 
+local zMonitorToken = 0
+
 local function spamZUntilNormal()
+    zMonitorToken = zMonitorToken + 1
+    local myToken = zMonitorToken
+
     task.spawn(function()
         local startTime = tick()
-        local maxDuration = 5
-        local interval = 0.1
+        local maxDuration = 15
+        local interval = 0.2
+
         while tick() - startTime < maxDuration do
+            if myToken ~= zMonitorToken then return end
+
             local val = getModeValue()
             if val == nil then return end
-            if val == "Normal" then return end
+
+            if val ~= "Normal" then
+                tapZ()
+            end
+
             task.wait(interval)
-            tapZ()
         end
     end)
 end
