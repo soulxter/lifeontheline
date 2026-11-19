@@ -16,6 +16,7 @@ local win = ui:Create({
 local hometab = win:Tab("Home")
 local maintab = win:Tab("Blatant")
 local maintab2 = win:Tab("Silent")
+local techstab = win:Tab("Techs")
 local funtab = win:Tab("Movesets")
 local teleporttab = win:Tab("Teleports")
 local exploittab = win:Tab("Exploits")
@@ -851,10 +852,14 @@ local ballMagnetState = {
     active = false,
     conn = nil,
     lastFire = 0,
+    lastTackle = 0,
     fire_intrv = 0.01,
-    radius = 1,
+    tackle_intrv = 0.1,
+    radius = 7,
     hrp = nil,
     useM2Hold = false,
+    burstCount = 3,
+    autoTackle = false,
     vizEnabled = false,
     hitbox = nil,
     vizLoop = nil
@@ -874,25 +879,48 @@ ballmag:Toggle("Ball Magnet", "Ball Magnet, Uses Set Radius As Range.", function
             ballMagnetState.conn:Disconnect()
         end
 
-        ballMagnetState.conn = RunService.Heartbeat:Connect(function()
+        ballMagnetState.conn = RunService.RenderStepped:Connect(function()
             local radius = ballMagnetState.radius or 1
             if radius < 2 then return end
 
             local ball = Workspace.Terrain:FindFirstChild("Ball")
             if not ball then return end
 
-            if ballMagnetState.hrp then
-                local dist = (ballMagnetState.hrp.Position - ball.Position).Magnitude
-                
-                if ballMagnetState.useM2Hold and not game:GetService("UserInputService"):IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
-                    return
-                end
-                
-                if dist <= radius and (time() - ballMagnetState.lastFire) >= ballMagnetState.fire_intrv then
-                    ballMagnetState.lastFire = time()
+            local hrp = ballMagnetState.hrp
+            if not hrp or not hrp.Parent then return end
+
+            if ballMagnetState.useM2Hold and not game:GetService("UserInputService"):IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+                return
+            end
+
+            local dx = hrp.Position.X - ball.Position.X
+            local dy = hrp.Position.Y - ball.Position.Y
+            local dz = hrp.Position.Z - ball.Position.Z
+            if dx * dx + dy * dy + dz * dz > radius * radius then return end
+
+            local now = tick()
+
+            if now - ballMagnetState.lastFire >= ballMagnetState.fire_intrv then
+                ballMagnetState.lastFire = now
+                for _ = 1, ballMagnetState.burstCount do
                     pcall(function()
                         NET:FireServer(buffer.fromstring(buffers["grabball"]))
                     end)
+                end
+            end
+
+            if ballMagnetState.autoTackle and now - ballMagnetState.lastTackle >= ballMagnetState.tackle_intrv then
+                for _, plr in ipairs(Players:GetPlayers()) do
+                    if plr ~= Players.LocalPlayer and plr.Character then
+                        local otherBall = plr.Character:FindFirstChild("Ball")
+                        if otherBall then
+                            ballMagnetState.lastTackle = now
+                            pcall(function()
+                                NET:FireServer(buffer.fromstring(buffers["base"]), {{"tackle"}})
+                            end)
+                            break
+                        end
+                    end
                 end
             end
         end)
@@ -904,8 +932,25 @@ ballmag:Toggle("Ball Magnet", "Ball Magnet, Uses Set Radius As Range.", function
     end
 end)
 
-ballmag:Slider("Ball Magnet Radius", 1, 1, 25, 0.5, function(v)
+ballmag:Slider("Ball Magnet Radius", 7, 2, 50, 0.5, function(v)
     ballMagnetState.radius = v
+end)
+
+ballmag:Slider("Ball Magnet Burst Count", 3, 1, 8, 1, function(v)
+    ballMagnetState.burstCount = v
+end)
+
+ballmag:Slider("Ball Magnet Tackle Interval", 0.1, 0.05, 0.5, 0.05, function(v)
+    ballMagnetState.tackle_intrv = v
+end)
+
+ballmag:Toggle("Auto Tackle On Range", "Also Fires Tackle When A Nearby Enemy Has The Ball.", function()
+    ballMagnetState.autoTackle = not ballMagnetState.autoTackle
+    game.StarterGui:SetCore("SendNotification", {
+        Title = "Magnet Auto Tackle",
+        Text = ballMagnetState.autoTackle and "Enabled." or "Disabled.",
+        Duration = 1
+    })
 end)
 
 ballmag:Toggle("Magnet Uses M2 Hold", "If Enabled, Ball Magnet Only Grabs While Right Click Is Held Down.", function()
@@ -6610,6 +6655,126 @@ exploittab:Textbox("Goal Target", "Enter A Number Of Goals To Stop Farming At.",
         goalFarmState.StopAt = math.huge
         game:GetService("StarterGui"):SetCore("SendNotification", {Title = "Goal Target", Text = "Invalid Target, Farm Will Be Infinite.", Duration = 2})
     end
+end)
+
+local nagiFolder = techstab:Folder("Nagi", Color3.fromRGB(169, 5, 255), true)
+nagiFolder:Label("Nagi Tech: Extended Range Grab + Anim.")
+
+local nagiState = {
+    enabled = false,
+    bindKey = Enum.KeyCode.H,
+    armed = false,
+    grabRange = 25,
+    animId = "rbxassetid://99824623739192",
+    animDuration = 0.45,
+    maxArmTime = 10
+}
+
+nagiFolder:Toggle("Nagi Tech", "When Armed, Grabs Ball At 11 Studs And Plays Anim.", function()
+    nagiState.enabled = not nagiState.enabled
+    if not nagiState.enabled then
+        nagiState.armed = false
+    end
+    game.StarterGui:SetCore("SendNotification", {
+        Title = "Nagi Tech",
+        Text = nagiState.enabled and "Enabled." or "Disabled.",
+        Duration = 1
+    })
+end)
+
+nagiFolder:Textbox("Nagi Keybind", "Enter Key (Example: G, H, N.)", function(text)
+    if typeof(text) ~= "string" then
+        nagiState.bindKey = Enum.KeyCode.G
+        game.StarterGui:SetCore("SendNotification", {
+            Title = "Nagi Keybind",
+            Text = "Invalid Input. Bind Is Now G.",
+            Duration = 2
+        })
+        return
+    end
+    local formatted = text:gsub("%s+", "")
+    local success, key = pcall(function()
+        return Enum.KeyCode[formatted]
+    end)
+    if success and key then
+        nagiState.bindKey = key
+        game.StarterGui:SetCore("SendNotification", {
+            Title = "Nagi Keybind",
+            Text = "Bind Set To: " .. key.Name,
+            Duration = 2
+        })
+    else
+        nagiState.bindKey = Enum.KeyCode.G
+        game.StarterGui:SetCore("SendNotification", {
+            Title = "Nagi Keybind",
+            Text = "Invalid Key. Bind Is Now G.",
+            Duration = 2
+        })
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if not nagiState.enabled then return end
+    if input.KeyCode ~= nagiState.bindKey then return end
+
+    if nagiState.armed then
+        nagiState.armed = false
+        return
+    end
+
+    nagiState.armed = true
+
+    task.spawn(function()
+        local startTime = tick()
+
+        while nagiState.enabled and nagiState.armed do
+            if tick() - startTime > nagiState.maxArmTime then
+                nagiState.armed = false
+                break
+            end
+
+            local char = player.Character
+            if not char or not char.Parent then
+                nagiState.armed = false
+                break
+            end
+
+            if char:FindFirstChild("Ball", true) then
+                nagiState.armed = false
+
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                local animator = hum and (hum:FindFirstChildOfClass("Animator") or hum:WaitForChild("Animator", 5))
+                if animator then
+                    local anim = Instance.new("Animation")
+                    anim.AnimationId = nagiState.animId
+                    local ok, track = pcall(function()
+                        return animator:LoadAnimation(anim)
+                    end)
+                    if ok and track then
+                        track:Play()
+                        task.wait(nagiState.animDuration)
+                        pcall(function() track:Stop() end)
+                    end
+                end
+                break
+            end
+
+            local ball = workspace.Terrain:FindFirstChild("Ball")
+            if ball then
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    if (hrp.Position - ball.Position).Magnitude <= nagiState.grabRange then
+                        pcall(function()
+                            NET:FireServer(buffer.fromstring(buffers["grabball"]))
+                        end)
+                    end
+                end
+            end
+
+            task.wait(0.05)
+        end
+    end)
 end)
 
 loadstring(game:HttpGet("https://raw.githubusercontent.com/ghostofcelleron/Scripts/refs/heads/main/oldthingyep",true))()
