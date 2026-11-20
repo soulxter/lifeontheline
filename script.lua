@@ -3357,7 +3357,7 @@ local function pad(pos, color)
     padCount += 1
     local p = Instance.new("Part")
     p.Name = "pad" .. padCount
-    p.Size = Vector3.new(8, 8, 8)
+    p.Size = Vector3.new(7.5, 2, 7.5)
     p.Position = pos
     p.Transparency = 0.65
     p.Anchored = true
@@ -3372,7 +3372,7 @@ local function target(pos, color)
     local t = Instance.new("Part")
     t.Name = "target" .. targetCount
     t.Shape = Enum.PartType.Ball
-    t.Size = Vector3.new(7, 2.5, 7)
+    t.Size = Vector3.new(7, 7, 7)
     t.Position = pos
     t.Anchored = true
     t.CanCollide = false
