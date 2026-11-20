@@ -3420,16 +3420,21 @@ end
 local function startCamLock(targetPart)
     activeTarget = targetPart
     if camLockConnection then camLockConnection:Disconnect() end
-    camLockConnection = RunService.RenderStepped:Connect(function()
-        if not activeTarget then
-            if camLockConnection then
-                camLockConnection:Disconnect()
-                camLockConnection = nil
-            end
-            return
-        end
-        camera.CFrame = CFrame.new(camera.CFrame.Position, activeTarget.Position)
+    
+    RunService:BindToRenderStep("LineupCameraLock", Enum.RenderPriority.Camera.Value + 1, function(dt)
+        if not activeTarget or not activeTarget.Parent then return end
+        local targetCFrame = CFrame.new(camera.CFrame.Position, activeTarget.Position)
+        local alpha = 1 - math.exp(-17 * dt)
+        camera.CFrame = camera.CFrame:Lerp(targetCFrame, alpha)
     end)
+    
+    camLockConnection = {
+        Disconnect = function()
+            pcall(function()
+                RunService:UnbindFromRenderStep("LineupCameraLock")
+            end)
+        end
+    }
 end
 
 local function stopCamLock()
@@ -3455,10 +3460,10 @@ local function applyLineupMode(padPart, dt)
             humanoid.WalkSpeed = 0
             suppressMovers()
             if padPart then
-                local targetPos = padPart.Position + Vector3.new(0, 3, 0)
+                local targetPos = padPart.Position + Vector3.new(0, 3.1, 0)
                 local currentRot = hrp.CFrame - hrp.CFrame.Position
                 local targetCF = CFrame.new(targetPos) * currentRot
-                local alpha = 1 - math.exp(-40 * (dt or 1/60))
+                local alpha = 1 - math.exp(-25 * (dt or 1/60))
                 hrp.CFrame = hrp.CFrame:Lerp(targetCF, alpha)
             end
         end
