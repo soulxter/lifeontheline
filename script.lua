@@ -3357,7 +3357,7 @@ local function pad(pos, color)
     padCount += 1
     local p = Instance.new("Part")
     p.Name = "pad" .. padCount
-    p.Size = Vector3.new(4, 4, 4)
+    p.Size = Vector3.new(8, 8, 8)
     p.Position = pos
     p.Transparency = 0.65
     p.Anchored = true
@@ -3372,7 +3372,7 @@ local function target(pos, color)
     local t = Instance.new("Part")
     t.Name = "target" .. targetCount
     t.Shape = Enum.PartType.Ball
-    t.Size = Vector3.new(7, 7, 7)
+    t.Size = Vector3.new(7, 2.5, 7)
     t.Position = pos
     t.Anchored = true
     t.CanCollide = false
@@ -3458,7 +3458,7 @@ local function applyLineupMode(padPart, dt)
                 local targetPos = padPart.Position + Vector3.new(0, 3, 0)
                 local currentRot = hrp.CFrame - hrp.CFrame.Position
                 local targetCF = CFrame.new(targetPos) * currentRot
-                local alpha = 1 - math.exp(-15 * (dt or 1/60))
+                local alpha = 1 - math.exp(-40 * (dt or 1/60))
                 hrp.CFrame = hrp.CFrame:Lerp(targetCF, alpha)
             end
         end
