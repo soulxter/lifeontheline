@@ -3424,7 +3424,7 @@ local function startCamLock(targetPart)
     RunService:BindToRenderStep("LineupCameraLock", Enum.RenderPriority.Camera.Value + 1, function(dt)
         if not activeTarget or not activeTarget.Parent then return end
         local targetCFrame = CFrame.new(camera.CFrame.Position, activeTarget.Position)
-        local alpha = 1 - math.exp(-17 * dt)
+        local alpha = 1 - math.exp(-30 * dt)
         camera.CFrame = camera.CFrame:Lerp(targetCFrame, alpha)
     end)
     
