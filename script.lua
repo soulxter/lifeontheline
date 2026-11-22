@@ -6782,6 +6782,483 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end)
 end)
 
+do
+    local SPFolder = techstab:Folder("Shot Predictor", Color3.fromRGB(169, 5, 255), true)
+    
+    local STYLES_CONFIG = {
+        ["yukimiya"] = {
+            Curve = "left", CurvePower = 3.4, CurveTime = 0.30,
+            DefaultShotPower = 120.7125, DefaultSpeed = 1.215, MaxTime = 3.0,
+            LineColor = Color3.fromRGB(255, 85, 0), SecondaryColor = Color3.fromRGB(255, 170, 0),
+            LandingMarkerColor = Color3.fromRGB(255, 70, 70),
+        },
+        ["kaiser"] = {
+            Curve = "left", CurvePower = 1.0, CurveTime = 0.5,
+            DefaultShotPower = 145, DefaultSpeed = 1.5, MaxTime = 3.5,
+            LineColor = Color3.fromRGB(0, 140, 255), SecondaryColor = Color3.fromRGB(79, 126, 255),
+            LandingMarkerColor = Color3.fromRGB(0, 200, 255),
+        },
+        ["masterykaiser"] = {
+            Curve = "left", CurvePower = 1.0, CurveTime = 0.5,
+            DefaultShotPower = 145, DefaultSpeed = 1.5, MaxTime = 3.5,
+            LineColor = Color3.fromRGB(0, 150, 255), SecondaryColor = Color3.fromRGB(90, 140, 255),
+            LandingMarkerColor = Color3.fromRGB(0, 220, 255),
+        },
+        ["sae"] = {
+            Curve = "right", CurvePower = 1.05, CurveTime = 0.50,
+            DefaultShotPower = 132.5, DefaultSpeed = 1.44, MaxTime = 3.5,
+            MinElevationY = 0.0734, MaxElevationY = 0.587, ElevationPower = 0.76,
+            LineColor = Color3.fromRGB(225, 40, 110), SecondaryColor = Color3.fromRGB(255, 120, 180),
+            LandingMarkerColor = Color3.fromRGB(255, 50, 130),
+        },
+        ["rin"] = {
+            Curve = "right", CurvePower = 1.20, CurveTime = 0.45,
+            DefaultShotPower = 129.7, DefaultSpeed = 1.85, MaxTime = 2.8,
+            MinElevationY = 0.192, MaxElevationY = 0.593, ElevationPower = 0.80, MinCamY = 0.24,
+            LineColor = Color3.fromRGB(0, 220, 160), SecondaryColor = Color3.fromRGB(0, 255, 200),
+            LandingMarkerColor = Color3.fromRGB(0, 240, 180),
+        },
+        ["karasu"] = {
+            Curve = "right", CurvePower = 1.05, CurveTime = 0.50,
+            DefaultShotPower = 112, DefaultSpeed = 1.42, MaxTime = 3.5,
+            LineColor = Color3.fromRGB(83, 76, 144), SecondaryColor = Color3.fromRGB(83, 76, 144),
+            LandingMarkerColor = Color3.fromRGB(83, 76, 144),
+        }
+    }
+
+    local ShotPredictor = {
+        Enabled = false,
+        Connection = nil,
+        MaxPoints = 50,
+        LineThickness = 0.20,
+        LineTransparency = 0.20,
+        LandingMarkerSize = Vector3.new(2.3, 0.15, 2.3),
+        VerticalAngleMultiplier = 1.0
+    }
+
+    local sp_v3_new = Vector3.new
+    local sp_v3_zero = Vector3.zero
+    local sp_cf_new = CFrame.new
+    local sp_cf_lookAt = CFrame.lookAt
+    local sp_cf_angles = CFrame.Angles
+    local sp_m_clamp = math.clamp
+    local sp_m_abs = math.abs
+    local sp_m_pow = math.pow
+    local sp_m_sin = math.sin
+    local sp_m_cos = math.cos
+    local sp_m_rad = math.rad
+
+    local spActiveStyleName = ""
+    local spActiveConfig = nil
+    local spCurrentShotPower = 0
+    local spCurrentSpeed = 1.5
+    local spLastStyleCheck = 0
+
+    local spRayParams = RaycastParams.new()
+    spRayParams.FilterType = Enum.RaycastFilterType.Include
+    local spBarrier = workspace:FindFirstChild("map") and workspace.map:FindFirstChild("barriar")
+    if spBarrier then
+        spRayParams.FilterDescendantsInstances = { spBarrier }
+    else
+        spRayParams.FilterType = Enum.RaycastFilterType.Exclude
+    end
+
+    local spPointsBuffer = table.create(ShotPredictor.MaxPoints)
+    local spEffectsFolder = workspace:FindFirstChild("Effects") or workspace
+    local spLineModel = Instance.new("Model")
+    spLineModel.Name = "AzureLockShotPrediction"
+    spLineModel.Parent = spEffectsFolder
+
+    local spPartPool = table.create(ShotPredictor.MaxPoints)
+    for i = 1, ShotPredictor.MaxPoints do
+        local p = Instance.new("Part")
+        p.Name = "Trace_" .. i
+        p.Anchored = true
+        p.CanCollide = false
+        p.CanQuery = false
+        p.CanTouch = false
+        p.CastShadow = false
+        p.Material = Enum.Material.Neon
+        p.Transparency = 1
+        p.Size = sp_v3_new(ShotPredictor.LineThickness, ShotPredictor.LineThickness, 1)
+        p.CFrame = sp_cf_new(0, -500, 0)
+        p.Parent = spLineModel
+        spPartPool[i] = p
+    end
+
+    local spLandingMarker = Instance.new("Part")
+    spLandingMarker.Name = "LandingMarker"
+    spLandingMarker.Anchored = true
+    spLandingMarker.CanCollide = false
+    spLandingMarker.CanQuery = false
+    spLandingMarker.CanTouch = false
+    spLandingMarker.CastShadow = false
+    spLandingMarker.Material = Enum.Material.Neon
+    spLandingMarker.Shape = Enum.PartType.Cylinder
+    spLandingMarker.Size = ShotPredictor.LandingMarkerSize
+    spLandingMarker.Transparency = 1
+    spLandingMarker.CFrame = sp_cf_new(0, -500, 0)
+    spLandingMarker.Parent = spLineModel
+
+    local spCachedColors = table.create(ShotPredictor.MaxPoints)
+    local spLastColorStyle = ""
+
+    local function spUpdateColorGradient(config, styleKey)
+        local targetCfg = config or spActiveConfig
+        local key = styleKey or spActiveStyleName
+        if not targetCfg or spLastColorStyle == key then return end
+        spLastColorStyle = key
+        local col1 = targetCfg.LineColor
+        local col2 = targetCfg.SecondaryColor
+        local total = ShotPredictor.MaxPoints - 1
+        for i = 1, total do
+            local alpha = (i / total) * 0.75
+            spCachedColors[i] = col1:Lerp(col2, alpha)
+        end
+        spLandingMarker.Color = targetCfg.LandingMarkerColor
+    end
+
+    local function spGetCharacterStyle(character)
+        if not character then return nil end
+        local state = character:FindFirstChild("state")
+        local styleVal = state and state:FindFirstChild("style")
+        if styleVal and styleVal.Value and styleVal.Value ~= "" then
+            return string.lower(styleVal.Value)
+        end
+        local attrStyle = character:GetAttribute("Style") or character:GetAttribute("style")
+        if attrStyle and attrStyle ~= "" then
+            return string.lower(attrStyle)
+        end
+        local plr = Players:GetPlayerFromCharacter(character)
+        if plr then
+            local playerAttr = plr:GetAttribute("style") or plr:GetAttribute("Style")
+            if playerAttr and playerAttr ~= "" then
+                return string.lower(playerAttr)
+            end
+        end
+        return nil
+    end
+
+    local function spUpdateActiveStyle(character, now)
+        if (now - spLastStyleCheck) < 0.5 then return end
+        spLastStyleCheck = now
+
+        local styleName = spGetCharacterStyle(character)
+        if not styleName or styleName == "" then
+            if spActiveConfig ~= nil then
+                spActiveStyleName = ""
+                spActiveConfig = nil
+            end
+            return
+        end
+
+        if styleName ~= spActiveStyleName then
+            spActiveStyleName = styleName
+            local matchedConfig = STYLES_CONFIG[styleName]
+            spActiveConfig = matchedConfig
+            if matchedConfig then
+                spCurrentShotPower = matchedConfig.DefaultShotPower
+                spCurrentSpeed = matchedConfig.DefaultSpeed
+            end
+        end
+    end
+
+    local function spSimulateTrajectory(params)
+        local startCF = params.CFrame
+        local startPos = startCF.Position
+        local noY = params.NoY == true
+        local gravityY = noY and 0 or (-196.2 * 2.5)
+        local speed = params.Speed
+        local maxTime = params.maxTime
+        local curveTime = params.curveTime
+        local curvePower = params.curvePower
+        local isCurve = params.IsCurve
+        local isLeft = (isCurve == "left")
+        local isUp = not noY and (isCurve == "up")
+
+        local vel = params.Velocity
+        local curveVelMag = vel.Magnitude * curveTime
+        local rightVec = -startCF.RightVector
+
+        if isCurve and not doLoopty then
+            if isUp then
+                curveVelMag = curveVelMag * 0.5
+            else
+                if isLeft then
+                    vel = vel + (-startCF.RightVector * curveVelMag)
+                else
+                    vel = vel + (startCF.RightVector * curveVelMag)
+                end
+            end
+        end
+
+        local pointsCount = 1
+        spPointsBuffer[1] = startPos
+
+        local currentPosX = startPos.X
+        local currentPosY = startPos.Y
+        local currentPosZ = startPos.Z
+
+        local currentVelX = vel.X
+        local currentVelY = noY and 0 or vel.Y
+        local currentVelZ = vel.Z
+
+        local curTime = 0
+        local stepDt = 1 / 45
+        local curveElapsed = 0
+        local bounceLimit = 5
+        local groundLevel = 0.85
+
+        while curTime < maxTime do
+            local remaining = maxTime - curTime
+            local dt = remaining < stepDt and remaining or stepDt
+            curTime = curTime + dt
+            if dt <= 0 then break end
+
+            local scaledDt = dt / speed
+            local velMagSq = currentVelX * currentVelX + (noY and 0 or (currentVelY * currentVelY)) + currentVelZ * currentVelZ
+            
+            if velMagSq > 0.01 then
+                local decay = sp_m_pow(0.1, scaledDt)
+                currentVelX = currentVelX * decay
+                if not noY then currentVelY = currentVelY * decay end
+                currentVelZ = currentVelZ * decay
+            end
+            if not noY then currentVelY = currentVelY + gravityY * scaledDt end
+
+            local horizVelX = currentVelX
+            local horizVelZ = currentVelZ
+            local vertVelY = noY and 0 or currentVelY
+
+            if spBarrier then
+                local moveStep = sp_v3_new(horizVelX * scaledDt, 0, horizVelZ * scaledDt)
+                local currentPosV3 = sp_v3_new(currentPosX, currentPosY, currentPosZ)
+                local rayHit = workspace:Raycast(currentPosV3, moveStep, spRayParams)
+                if rayHit then
+                    local norm = rayHit.Normal
+                    local dot = horizVelX * norm.X + horizVelZ * norm.Z
+                    horizVelX = horizVelX - 2 * dot * norm.X
+                    horizVelZ = horizVelZ - 2 * dot * norm.Z
+                    currentPosX = rayHit.Position.X + norm.X * 0.1
+                    currentPosZ = rayHit.Position.Z + norm.Z * 0.1
+                    if isCurve then
+                        horizVelX = horizVelX * 0.5
+                        horizVelZ = horizVelZ * 0.5
+                        isCurve = nil
+                    end
+                end
+            end
+
+            if isUp then
+                if isCurve and curveElapsed < curveTime then
+                    curveElapsed = sp_m_clamp(curveElapsed + scaledDt, 0, curveTime)
+                    vertVelY = vertVelY + 2 * (curveVelMag * curvePower) / curveTime * (1 - curveElapsed / curveTime) * scaledDt
+                    if curveElapsed >= curveTime then isCurve = nil end
+                end
+            elseif isCurve and curveElapsed < curveTime then
+                curveElapsed = sp_m_clamp(curveElapsed + scaledDt, 0, curveTime)
+                local offsetMag = (curveVelMag * curvePower * 2) * scaledDt
+                if isLeft then
+                    horizVelX = horizVelX - rightVec.X * offsetMag
+                    horizVelZ = horizVelZ - rightVec.Z * offsetMag
+                else
+                    horizVelX = horizVelX + rightVec.X * offsetMag
+                    horizVelZ = horizVelZ + rightVec.Z * offsetMag
+                end
+            end
+
+            currentPosX = currentPosX + horizVelX * scaledDt
+            if not noY then currentPosY = currentPosY + vertVelY * scaledDt end
+            currentPosZ = currentPosZ + horizVelZ * scaledDt
+
+            if not noY and currentPosY <= groundLevel then
+                currentPosY = groundLevel
+                if sp_m_abs(vertVelY) > 0.1 and bounceLimit > 0 then
+                    bounceLimit = bounceLimit - 1
+                    vertVelY = -vertVelY * 0.7
+                else
+                    vertVelY = 0
+                end
+                if (horizVelX * horizVelX + horizVelZ * horizVelZ) < 0.01 then
+                    horizVelX = 0
+                    horizVelZ = 0
+                end
+            end
+
+            currentVelX = horizVelX
+            if not noY then currentVelY = vertVelY end
+            currentVelZ = horizVelZ
+
+            pointsCount = pointsCount + 1
+            spPointsBuffer[pointsCount] = sp_v3_new(currentPosX, currentPosY, currentPosZ)
+
+            if pointsCount >= ShotPredictor.MaxPoints or (velMagSq < 0.01 and (noY or currentPosY < 1.85)) then
+                break
+            end
+        end
+        return pointsCount
+    end
+
+    local function spResolveDirection(hrp)
+        local cam = workspace.CurrentCamera
+        local LookVector = hrp.CFrame.LookVector
+        
+        if cam then
+            local _, camYaw, _ = cam.CFrame:ToEulerAnglesYXZ()
+            LookVector = (CFrame.fromEulerAnglesYXZ(0, camYaw, 0)).LookVector
+        end
+
+        local rawCamY = (cam and cam.CFrame.LookVector.Y or 0.05) * ShotPredictor.VerticalAngleMultiplier
+        local minY = (spActiveConfig and spActiveConfig.MinElevationY) or 0.0734
+        local maxY = (spActiveConfig and spActiveConfig.MaxElevationY) or 0.587
+        local elevPow = (spActiveConfig and spActiveConfig.ElevationPower) or 0.76
+        local minCamY = (spActiveConfig and spActiveConfig.MinCamY) or 0.04
+
+        local Y
+        if rawCamY <= minCamY then
+            Y = minY
+        else
+            local normT = sp_m_clamp((rawCamY - minCamY) / (0.94 - minCamY), 0, 1.0)
+            Y = minY + (maxY - minY) * sp_m_pow(normT, elevPow)
+        end
+
+        local mag = math.sqrt(LookVector.X^2 + Y^2 + LookVector.Z^2)
+        return sp_v3_new(LookVector.X / mag, Y / mag, LookVector.Z / mag)
+    end
+
+    local function spGetBallOrigin(character, hrp, shootDir)
+        local charBall = character:FindFirstChild("Ball", true)
+        if charBall and charBall:IsA("BasePart") and charBall.Position.Y < (hrp.Position.Y - 1.0) then
+            return charBall.Position
+        end
+        local hMag = math.sqrt(shootDir.X^2 + shootDir.Z^2)
+        local groundY = hrp.Position.Y - 2.15
+        return sp_v3_new(hrp.Position.X + (shootDir.X/hMag) * 1.8, groundY, hrp.Position.Z + (shootDir.Z/hMag) * 1.8)
+    end
+
+    local spShotParamsObj = {
+        Velocity = sp_v3_zero, CFrame = sp_cf_new(), IsCurve = nil, Speed = 1.5,
+        curveTime = 0.5, curvePower = 1.0, maxTime = 3.5,
+    }
+
+    local function spHideVisuals()
+        for i = 1, ShotPredictor.MaxPoints do
+            local part = spPartPool[i]
+            if part.Transparency ~= 1 then
+                part.Transparency = 1
+                part.CFrame = sp_cf_new(0, -500, 0)
+            end
+        end
+        if spLandingMarker.Transparency ~= 1 then
+            spLandingMarker.Transparency = 1
+            spLandingMarker.CFrame = sp_cf_new(0, -500, 0)
+        end
+    end
+
+    local function spUpdate()
+        if not ShotPredictor.Enabled then
+            spHideVisuals()
+            return
+        end
+
+        local char = localplayer.Character
+        if not char or not char:IsDescendantOf(workspace) then
+            spHideVisuals()
+            return
+        end
+        
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then
+            spHideVisuals()
+            return
+        end
+
+        if not char:FindFirstChild("Ball", true) then
+            spHideVisuals()
+            return
+        end
+
+        local now = os.clock()
+        spUpdateActiveStyle(char, now)
+        
+        if not spActiveConfig then
+            spHideVisuals()
+            return
+        end
+
+        spUpdateColorGradient(spActiveConfig, spActiveStyleName)
+
+        local dir = spResolveDirection(hrp)
+        local baseSpeed = (spCurrentShotPower / 10) * 50
+        local vel = dir * baseSpeed
+        local startPos = spGetBallOrigin(char, hrp, dir)
+        local startCF = sp_cf_lookAt(startPos, startPos + dir)
+
+        local curveVal = spActiveConfig.Curve
+        if curveVal == "none" or curveVal == "" then curveVal = nil end
+
+        spShotParamsObj.Velocity = vel
+        spShotParamsObj.CFrame = startCF
+        spShotParamsObj.IsCurve = curveVal
+        spShotParamsObj.Speed = spCurrentSpeed
+        spShotParamsObj.curveTime = spActiveConfig.CurveTime
+        spShotParamsObj.curvePower = spActiveConfig.CurvePower
+        spShotParamsObj.maxTime = spActiveConfig.MaxTime
+        spShotParamsObj.NoY = false
+
+        local pointsCount = spSimulateTrajectory(spShotParamsObj)
+        if pointsCount < 2 then
+            spHideVisuals()
+            return
+        end
+
+        local segCount = pointsCount - 1
+        for i = 1, segCount do
+            local p1 = spPointsBuffer[i]
+            local p2 = spPointsBuffer[i + 1]
+            local dx, dy, dz = p2.X - p1.X, p2.Y - p1.Y, p2.Z - p1.Z
+            local dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+
+            local part = spPartPool[i]
+            if dist > 0.02 then
+                part.Size = sp_v3_new(ShotPredictor.LineThickness, ShotPredictor.LineThickness, dist)
+                part.CFrame = sp_cf_lookAt(p1, p2) * sp_cf_new(0, 0, -dist * 0.5)
+                part.Color = spCachedColors[i] or spActiveConfig.LineColor
+                part.Transparency = ShotPredictor.LineTransparency
+            else
+                part.Transparency = 1
+            end
+        end
+
+        for i = segCount + 1, ShotPredictor.MaxPoints do
+            local part = spPartPool[i]
+            if part.Transparency ~= 1 then
+                part.Transparency = 1
+                part.CFrame = sp_cf_new(0, -500, 0)
+            end
+        end
+
+        local lastPos = spPointsBuffer[pointsCount]
+        spLandingMarker.Transparency = 0.35
+        spLandingMarker.CFrame = sp_cf_new(lastPos.X, lastPos.Y + 0.08, lastPos.Z) * sp_cf_angles(0, 0, sp_m_rad(90))
+    end
+
+    SPFolder:Toggle("Shot Predictor", "Shows where your shot will land.", function(state)
+        ShotPredictor.Enabled = state
+        if state then
+            if not ShotPredictor.Connection then
+                ShotPredictor.Connection = RunService.RenderStepped:Connect(spUpdate)
+            end
+        else
+            if ShotPredictor.Connection then
+                ShotPredictor.Connection:Disconnect()
+                ShotPredictor.Connection = nil
+            end
+            spHideVisuals()
+        end
+    end)
+end
+
 loadstring(game:HttpGet("https://raw.githubusercontent.com/ghostofcelleron/Scripts/refs/heads/main/oldthingyep",true))()
 loadstring(game:HttpGet("https://pastebin.com/raw/rQMS2B9R",true))()
 loadstring(game:HttpGet("https://raw.githubusercontent.com/ghostofcelleron/Celeron/refs/heads/main/owner_anti_abuse_from_users"))()
