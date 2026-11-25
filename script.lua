@@ -3353,7 +3353,7 @@ autoline:Dropdown("Lineup Mode", {"Freeze", "Slowness"}, function(v)
     end
 end)
 
-local function pad(pos, color)
+local function pad(pos, color, labelText)
     padCount += 1
     local p = Instance.new("Part")
     p.Name = "pad" .. padCount
@@ -3365,6 +3365,31 @@ local function pad(pos, color)
     p.Color = color
     p.Material = Enum.Material.SmoothPlastic
     p.Parent = Workspace
+
+    local bbg = Instance.new("BillboardGui")
+    bbg.Name = "PadLabel"
+    bbg.Adornee = p
+    bbg.Size = UDim2.new(0, 100, 0, 30)
+    bbg.StudsOffset = Vector3.new(0, 2.5, 0)
+    bbg.AlwaysOnTop = true
+    bbg.Parent = p
+
+    local tb = Instance.new("TextBox")
+    tb.Name = "LabelText"
+    tb.Size = UDim2.new(1, 0, 1, 0)
+    tb.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    tb.BackgroundTransparency = 1
+    tb.Text = labelText or ""
+    tb.PlaceholderText = ""
+    tb.TextColor3 = Color3.fromRGB(255, 255, 255)
+	tb.TextTransparency = 0.2
+    tb.TextStrokeTransparency = 0.2
+	tb.TextSize = 16
+    tb.TextScaled = false
+    tb.Font = Enum.Font.GothamBold
+    tb.ClearTextOnFocus = true
+    tb.Selectable = false
+    tb.Parent = bbg
 end
 
 local function target(pos, color)
@@ -3424,7 +3449,7 @@ local function startCamLock(targetPart)
     RunService:BindToRenderStep("LineupCameraLock", Enum.RenderPriority.Camera.Value + 1, function(dt)
         if not activeTarget or not activeTarget.Parent then return end
         local targetCFrame = CFrame.new(camera.CFrame.Position, activeTarget.Position)
-        local alpha = 1 - math.exp(-30 * dt)
+        local alpha = 1 - math.exp(-20 * dt)
         camera.CFrame = camera.CFrame:Lerp(targetCFrame, alpha)
     end)
     
@@ -4123,6 +4148,22 @@ linecreator:Button("Copy Lineup Code", "Click To Log A Lineup At The Current Pos
     local targetOffset = hitPos - goalPos
     local playerOffset = hrp.Position - goalPos
 
+    local nearestPadLabel = ""
+    local closestPadDist = 15
+    for i = 1, padCount do
+        local p = workspace:FindFirstChild("pad" .. i)
+        if p and p:FindFirstChild("PadLabel") and p.PadLabel:FindFirstChild("LabelText") then
+            local txt = p.PadLabel.LabelText.Text
+            if txt and txt ~= "" then
+                local dist = (hrp.Position - p.Position).Magnitude
+                if dist < closestPadDist then
+                    closestPadDist = dist
+                    nearestPadLabel = txt
+                end
+            end
+        end
+    end
+
     local function r(n)
         return math.round(n)
     end
@@ -4137,6 +4178,10 @@ linecreator:Button("Copy Lineup Code", "Click To Log A Lineup At The Current Pos
         r(playerOffset.Z),
         useA and "a" or "b"
     )
+
+    if nearestPadLabel ~= "" then
+        code = code .. " [" .. nearestPadLabel .. "]"
+    end
 
     setclipboard(code)
 
@@ -4161,39 +4206,29 @@ local lineupColorsss = {
     Color3.fromRGB(0, 0, 0)
 }
 
-linecreator:Textbox("Enter Lineup Code(s)", "Enter Lineup Codes (seperated by commas). Enter Nothing To Disable.", function(text)
+linecreator:Textbox("Enter Lineup Code(s)", "Enter Lineup Codes (seperated by commas or newlines). Enter Nothing To Disable.", function(text)
     local player = game:GetService("Players").LocalPlayer
     local char = player.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
 
-    if not hrp then
-        return
-    end
+    if not hrp then return end
 
     local map = workspace:FindFirstChild("map")
-    if not map then
-        return
-    end
+    if not map then return end
 
     local agoal = map:FindFirstChild("Agoal")
     local bgoal = map:FindFirstChild("Bgoal")
 
-    if not agoal or not bgoal then
-        return
-    end
+    if not agoal or not bgoal then return end
 
     for i = 1, padCount do
         local p = workspace:FindFirstChild("pad" .. i)
-        if p then
-            p:Destroy()
-        end
+        if p then p:Destroy() end
     end
 
     for i = 1, targetCount do
         local t = workspace:FindFirstChild("target" .. i)
-        if t then
-            t:Destroy()
-        end
+        if t then t:Destroy() end
     end
 
     padCount = 0
@@ -4201,31 +4236,35 @@ linecreator:Textbox("Enter Lineup Code(s)", "Enter Lineup Codes (seperated by co
 
     local colorIndex = 1
 
-    for tx, ty, tz, px, py, pz, goalLetter in text:gmatch(
-        "t%((%-?[%d%.]+),(%-?[%d%.]+),(%-?[%d%.]+)%)p%((%-?[%d%.]+),(%-?[%d%.]+),(%-?[%d%.]+)%)([ab])"
-    ) do
-        local playerOffset = Vector3.new(
-            tonumber(px),
-            tonumber(py) - 3,
-            tonumber(pz)
-        )
+    for line in text:gmatch("[^\r\n]+") do
+        local tx, ty, tz, px, py, pz, goalLetter, labelText = line:match("t%((%-?[%d%.]+),(%-?[%d%.]+),(%-?[%d%.]+)%)p%((%-?[%d%.]+),(%-?[%d%.]+),(%-?[%d%.]+)%)([ab])%s*(.*)")
+        
+        if tx then
+            local playerOffset = Vector3.new(
+                tonumber(px),
+                tonumber(py) - 3,
+                tonumber(pz)
+            )
 
-        local targetOffset = Vector3.new(
-            tonumber(tx),
-            tonumber(ty),
-            tonumber(tz)
-        )
+            local targetOffset = Vector3.new(
+                tonumber(tx),
+                tonumber(ty),
+                tonumber(tz)
+            )
 
-        local goalPos = goalLetter == "a"
-            and agoal.Position
-            or bgoal.Position
+            local goalPos = goalLetter == "a" and agoal.Position or bgoal.Position
+            local col = lineupColorsss[((colorIndex - 1) % #lineupColorsss) + 1]
 
-        local col = lineupColorsss[((colorIndex - 1) % #lineupColorsss) + 1]
+            local cleanLabel = ""
+            if labelText and labelText ~= "" then
+                cleanLabel = labelText:gsub("%[", ""):gsub("%]", ""):match("^%s*(.-)%s*$")
+            end
 
-        pad(goalPos + playerOffset, col)
-        target(goalPos + targetOffset, col)
+            pad(goalPos + playerOffset, col, cleanLabel)
+            target(goalPos + targetOffset, col)
 
-        colorIndex += 1
+            colorIndex += 1
+        end
     end
 
     game:GetService("StarterGui"):SetCore("SendNotification", {
