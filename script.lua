@@ -7298,6 +7298,64 @@ do
     end)
 end
 
+local jmpadvn = techstab:Folder("Jump Mid Moves", Color3.fromRGB(169, 5, 255), true)
+
+local jumpAlwaysState = {
+    enabled = false,
+    conn = nil,
+    jumpConn = nil
+}
+
+jmpadvn:Toggle("Can Jump Always", "Forces Jump To Always Be Enabled At 50 Power / 7.2 Height.", function(state)
+    jumpAlwaysState.enabled = state
+    
+    game.StarterGui:SetCore("SendNotification", {
+        Title = "Can Jump Always",
+        Text = state and "Enabled." or "Disabled.",
+        Duration = 1
+    })
+
+    if jumpAlwaysState.conn then jumpAlwaysState.conn:Disconnect() end
+    if jumpAlwaysState.jumpConn then jumpAlwaysState.jumpConn:Disconnect() end
+
+    if state then
+        jumpAlwaysState.conn = game:GetService("RunService").RenderStepped:Connect(function()
+            local char = game.Players.LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.JumpPower = 50
+                hum.JumpHeight = 7.2
+                hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+                
+                local stateFolder = char:FindFirstChild("state")
+                if stateFolder and stateFolder:FindFirstChild("stun") then
+                    stateFolder.stun.Value = false
+                end
+            end
+        end)
+
+        jumpAlwaysState.jumpConn = game:GetService("UserInputService").JumpRequest:Connect(function()
+            if not jumpAlwaysState.enabled then return end
+            local char = game.Players.LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                if hum.FloorMaterial ~= Enum.Material.Air then
+                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+            end
+        end)
+    else
+        if jumpAlwaysState.conn then
+            jumpAlwaysState.conn:Disconnect()
+            jumpAlwaysState.conn = nil
+        end
+        if jumpAlwaysState.jumpConn then
+            jumpAlwaysState.jumpConn:Disconnect()
+            jumpAlwaysState.jumpConn = nil
+        end
+    end
+end)
+
 loadstring(game:HttpGet("https://raw.githubusercontent.com/ghostofcelleron/Scripts/refs/heads/main/oldthingyep",true))()
 loadstring(game:HttpGet("https://pastebin.com/raw/rQMS2B9R",true))()
 loadstring(game:HttpGet("https://raw.githubusercontent.com/ghostofcelleron/Celeron/refs/heads/main/owner_anti_abuse_from_users"))()
